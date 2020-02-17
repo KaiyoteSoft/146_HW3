@@ -1,0 +1,416 @@
+---
+title: "Homework 3"
+author: "Kai Oda"
+date: "2/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set("~/Biology/146/Homework 3")
+
+library(ggplot2)
+library(car)
+library(dplyr)
+```
+
+In this homework, you will:
+
+1. Import data from an online data repository and understand the metadata
+2. Wrangle a large dataset into an appropriate format for a scientific question
+3. Visualize data with the goal of comparing means among more than 2 groups
+4. Check assumptions for a 1-way ANOVA
+5. Conduct a 1-way ANOVA with >2 levels of a factor
+6. Add a blocking variable
+7. Perform post-hoc testing
+
+
+As part of your final project, you must find your own dataset to analyze. There are many different repositories from which you can download data, but perhaps one of the easiest for ecological studies is the Environmental Data Initiative repository (www.EDI.org). For this homework, you will download a dataset from EDI that was created by researchers here at UCSB working at the Santa Barbara Channel LTER.
+
+The dataset contains several measurements of many different species across several sites, multiple months and years, and subjected to multiple different treatments. For this homework, we are going to focus our attention on the most abundant order, and we are interested in investigating the mean effect of kelp removal treatment at each site across all time periods. 
+
+1. Download the data package from https://portal.edirepository.org/nis/mapbrowse?packageid=knb-lter-sbc.119.2
+
+2. Extract the files from the zip file
+
+3. Copy the csv file and save it in your homework 3 folder
+
+4. Read the metadata available under both tabs on the dataset website
+
+
+### 1. Data wrangling (30pts)
+
+#### a. Read in the data. What are the dimensions of the dataset? (2pts)
+```{r}
+
+kelp = read.csv("LTE_All_Species_Biomass_at_transect_20181214.csv")
+dim(kelp)
+head(kelp)
+unique(kelp$SITE)
+
+```
+
+There are 165384 rows and 24 columns. 
+
+Given the size of this dataset, you must be very careful in ensuring that your knitted file does not print out the whole thing accidentally!
+
+
+While there are a lot of data in this dataset, we are interested in comparing percent cover of the most abundant order among three different treatments: CONTROL, ANNUAL, and CONTINUAL.
+
+#### b. Look at the metadata for this dataset. What do the different treatments mean? (2pts)
+
+**Control:** Giant kelp (Macrocystis) left in place in a 2000 m^2 plot. <br>
+**Annual removal:** Macrocystis removed annually every winter and allowed to recolonize <br>
+**Continuous removal:** Macrocystis removed from a 200 m^2 area within the 2000 meter plot every time the area is sampled ~4 times/year. 
+
+
+#### c. How many different sites are represented in the dataset, and what are their actual names (you will need to look in the metadata to find this) (3pts)
+
+
+Five sites were represented in this dataset. <br>
+AQUE = Arroyo Quemado Reef
+CARP = Carpinteria Reef
+MOHK = Mohawk Reef
+NAPL = Naples Reef
+IVEE = Isla Vista Reef
+
+We now have some work to do to get the data in the shape that we want!
+
+#### d. Examine the structure of the data using str(). How are missing values coded in this dataset? (2pts) 
+Note: You may want to consult the metadata to confirm this
+
+```{r}
+str(kelp)
+
+
+```
+
+Values that are "not recorded or available" are recorded as -99999. 
+
+We now are going to thin our dataset to exclude these missing values for our response variable of interest, PERCENT_COVER.
+
+#### e. Create a new dataframe (called kelp2) that excludes any row that contains a missing value (as coded above). 
+
+Hint: One way to alter dataframes combines indices and the which() function. For example, let's say I have a dataframe, d:
+
+```{r}
+d = data.frame(ID=seq(1,5),value=sample(1:8,5))
+d
+```
+
+And I would like to remove any row that has an ID greater than 4. I can write:
+
+```{r}
+
+d2 = d[-which(d$ID>4),]
+d2
+
+```
+
+#### Now apply this logic to the kelp dataset. What are the dimensions of the new dataset? (4pts)
+Note: you should use head() to examine the dataset rather than printing it out (otherwise you may be printing output endlessly!) 
+
+
+```{r}
+kelp2 = kelp[-which(kelp$PERCENT_COVER<0),]
+dim(kelp2)
+```
+
+There are now 74052 rows and 24 columns. 
+
+
+We have also already decided that we are going to restrict our analyses to only compare CONTROL, ANNUAL, and CONTINUAL removal. 
+
+#### f. Remove any row that has a treatment not equal to CONTROL, ANNUAL, or CONTINUAL. 
+
+Hint: You can use a really handy shortcut, "%in%" to keep or remove multiple values in one go. Let's go back to our boring old dataframe again. To remove any ID equal to either a 2 or a 3, I can write:
+
+```{r}
+d[-which(d$ID %in% c(2,3)),]
+
+# I used the minus sign to tell R to subtract any row in the d$ID column that is either 2 or 3. Using %in% with no minus sign returns rows with IDs either 2 or 3.
+
+```
+
+#### Now apply this logic to the kelp dataset to remove any treatment that is not CONTROL, ANNUAL, or CONTINUAL and call it kelp3. How many rows are left? (4pts)
+
+```{r}
+kelp3 = kelp2[which(kelp2$TREATMENT %in% c("CONTROL", "ANNUAL", "CONTINUAL")),]
+dim(kelp3)
+```
+
+There are 68112 rows and the same 24 columns left. 
+
+We still have a LOT of datapoints -- too many to make really meaningful plots without summarizing in some way.  
+
+
+We are now going to simplify our data to show the percent cover of each taxonomic order in the data. To do this, we need to take the percent cover for each species within each order and add them up. 
+
+The dplyr package has some great functions to help you to group by different variables and compute averages, sums, differences, and more.
+
+#### g. Compute the total percent cover of each order by adding the percent cover of constituent species.
+Note: Here we are assuming that cover is mutually exclusive among species.
+
+Hint: Let's make a new boring dataframe:
+```{r}
+# Code to make a new df
+d = data.frame(ID=seq(1,20),Value=rnorm(20),Factor1=c(rep("A",10),rep("B",10)), Factor2=c(rep("RED",5),rep("YELLOW",5),rep("ORANGE",5),rep("PURPLE",5)))
+head(d)
+```
+
+You can use "pipes" "%>%" to string together multiple functions. In the example below, I take my dataframe, group it by the factors I want to sum across, and then summarize the column of interest (Value) by computing the sum.
+
+```{r}
+
+d %>% group_by(Factor1, Factor2) %>% summarize_at(vars(Value),funs(sum))
+# The result is the sum of all rows for each of the four groups
+```
+
+
+#### Now apply this logic to the kelp data and name it kelp4. Use SITE, TRANSECT, TREATMENT, TAXON_ORDER, MONTH, and YEAR as grouping variables. What are the dimensions of kelp4? (5pts)
+
+```{r}
+
+kelp4 = kelp3 %>% group_by(SITE, TRANSECT, TREATMENT, TAXON_ORDER, MONTH, YEAR) %>%
+  summarize_at(vars(PERCENT_COVER), funs(sum))
+head(kelp4)
+dim(kelp4)
+# kelp4 = kelp4[-which(kelp4$TAXON_ORDER %in% c(-99999)),]
+# dim(kelp4)
+```
+
+When I initially ran the code there were 26144 rows and 7 columns BUT there was a taxon order with -99999, indicating a lack of data. 
+
+
+#### Slowly but surely, we are simplifying these data! Check out the last few lines of kelp4 using the tail() function.
+
+```{r}
+
+tail(kelp4)
+
+```
+
+
+#### h. Why should we take the average percent cover (across transect and time period for each order) if we are only interested in comparing the treatments (using sites as replicates)? (3pts)
+
+The average percent cover is a simple way to visualize the effect of treatment (continual, annual, control) and taxon order on percent cover. Sicne percent cover was measured for species over the same time frame, simplyfying the treatment effect by averaging the percent cover should be OK. 
+
+
+There are ways to incorporate these details in statistical models, but for now we will simply average across them using a similar method to how we added percent cover.
+
+#### i. Calculate the average PERCENT_COVER for each order at each site and treatment, grouping by TREATMENT, SITE, and TAXON_ORDER. (5pts)
+
+```{r}
+
+kelp5 = kelp4 %>% group_by(TREATMENT, SITE, TAXON_ORDER) %>% 
+  summarize_at(vars(PERCENT_COVER), funs(mean))
+
+```
+
+Your final kelp5 dataset should have 532 rows. If it does not, recheck your work!
+
+
+
+### 2. Visualizing and zooming in on the most abundant order. (18pts)
+
+#### a. Create an informative plot of the data. Explain what you are showing. (5pts)
+
+```{r}
+ggplot(kelp5, aes(x=TAXON_ORDER, y=PERCENT_COVER))+
+  geom_bar(stat="identity")+
+  ggtitle("Percent cover by taxon order (All sites + treatments)")+
+  theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0.6))+
+  theme(plot.title = element_text(hjust=0.5))
+
+
+
+```
+
+A simple plot that shows the percent cover of different taxon orders. Percent cover exceeds 100 because cover is added across five different sites and three different treatments. So potentially 14-15 different percent covers are represented in one bar. 
+
+#### b. Which order has the highest percent cover on average? (5pts)
+
+```{r}
+kelpHigh = kelp5 %>% group_by(TAXON_ORDER) %>% 
+  summarize_at(vars(PERCENT_COVER), funs(sum))
+kelpHigh_sorted <- kelpHigh[with(kelpHigh, order(-PERCENT_COVER)),]
+head(kelpHigh_sorted)
+
+```
+The order **Corallinales** has the highest percent cover on average (234.1% over five sites and three treatments)
+
+#### c. Trim the dataset to only include the most abundant order and save it as a new dataframe. (3pts)
+
+```{r}
+d[-which(d$ID %in% c(2,3)),]
+kelp_order = kelp5[which(kelp5$TAXON_ORDER %in% c("Corallinales")),]
+head(kelp_order)
+
+```
+
+#### d. Create a plot that compares percent cover across the different treatments for this group. (5pts)
+
+```{r}
+ggplot(kelp_order, aes(x=TREATMENT, y=PERCENT_COVER, fill=TREATMENT))+
+  geom_boxplot()+
+  labs(x="Transect treatment")+
+  ggtitle("Percent cover of Corinalles across treatments")+
+  theme(plot.title=element_text(hjust=0.5))
+
+```
+
+
+FINALLY, we are ready to conduct a one-way ANOVA!
+
+### 3. Implementing a 1-way ANOVA (30pts)
+
+#### a. What are your null and alternative hypotheses for a 1-way ANOVA of percent cover among different treatments? (4pts)
+
+**Null:** The mean percent cover for all groups (annual, continual and control) will be the same. <br> 
+**Alternative:** The mean percent cover for at least one group will be different from the others. 
+
+
+#### b. Check for normality and equality of variance. Are your assumptions met? (4pts)
+
+```{r}
+car::qqPlot(kelp_order$PERCENT_COVER)
+kelp_order %>% group_by(TREATMENT) %>% summarize_at(vars(PERCENT_COVER), funs(statistic=shapiro.test(.)$statistic, p.value=shapiro.test(.)$p.value))
+
+
+leveneTest(kelp_order$PERCENT_COVER ~ kelp_order$TREATMENT)
+
+```
+
+**Normality:** A qqPlot of the percent cover data appears to show all data points within the expected confidence interval. The shapiro test shows p values that are all greater than 0.05, which means we cannot reject the null hypothesis that the data is normally distributed. <br>
+**Variance:** The Levene test returns a p value greater than 0.05, which means we cannot reject the null hypothesis that the variances are equal. Therefore, we meet both the normal and variance requirements for the ANOVA test. 
+
+### Hand-calculating an ANOVA
+
+#### c. Calculate the sum of squares for the groups (consider sites as replicates for now). (8pts)
+```{r}
+# You might find it easiest to subset the data into a group for each treatment:
+ANNUAL = subset(kelp_order, kelp_order$TREATMENT == "ANNUAL")
+CONTINUAL = subset(kelp_order, kelp_order$TREATMENT == "CONTINUAL")
+CONTROL = subset(kelp_order, kelp_order$TREATMENT == "CONTROL")
+
+# Find the mean percent cover for each group
+A= mean(ANNUAL$PERCENT_COVER)
+B= mean(CONTINUAL$PERCENT_COVER)
+C= mean(CONTROL$PERCENT_COVER)
+
+# Find the overall mean
+G= mean(kelp_order$PERCENT_COVER)
+
+# Find the sample size for each group
+A_df <- length(ANNUAL$PERCENT_COVER) - 1
+B_df <- length(CONTINUAL$PERCENT_COVER) - 1
+C_df <- length(CONTROL$PERCENT_COVER) - 1
+
+# Compute sum of squares
+SSgroup = 5*(A-G)^2 + 4*(B-G)^2 + 5*(C-G)^2
+
+```
+
+My SSgroup is `r SSgroup`. 
+
+#### d. Now calculate the residual SS (within group error) (5pts)
+
+```{r}
+### You can easily do this using the var() or sd() functions (check your notes with the squirrel body temp example) 
+
+SSerror = (A_df*var(ANNUAL$PERCENT_COVER)) + (B_df*var(CONTINUAL$PERCENT_COVER)) + (C_df*(var(CONTROL$PERCENT_COVER)))
+
+```
+My SSerror is `r SSerror`.
+
+
+#### e. Now compute the F-stat and find F-star. (4pts)
+
+```{r}
+MSgroup = SSgroup / 2
+MSerror = SSerror / (A_df + B_df + C_df + 3)
+
+
+Fstat = MSgroup/MSerror
+Fstar = qf(1-0.05, 2, 6)
+
+kelp_anova <- aov(PERCENT_COVER ~ TREATMENT, data=kelp_order)
+summary(kelp_anova)
+```
+My Fstat is `r Fstat` and my F* is `r Fstar`.
+
+
+#### f. Do you reject or fail to reject the null hypothesis of equal between- and within-group variances? (2pts)
+Since the Fstat is less extreme than the calculated Fstar we fail to reject the null hypothesis that the between and within group variances are significantly different. Additionally, we also cannot reject the null hypothesis that the means of all the groups are the same. This is concerned by running the actual ANOVA, which returns a p value greater than 0.05. 
+
+
+
+#### g. Implement the ANOVA using the aov() function and print the summary. Does it match your calculations? (4pts)
+
+```{r}
+mod1 = aov(PERCENT_COVER ~ TREATMENT, data=kelp_order)
+summary(mod1)
+
+
+```
+The answer does match my calculation. 
+
+
+Given that each treatment was conducted at eact of five sites, we may want to include site as a block.
+
+### 4. Add a blocking effect. (15pts)
+
+#### a. Include site as a second factor in your analysis using aov() and lm(). Print the summary outputs. (4pts)
+```{r}
+mod2 = aov(PERCENT_COVER ~ TREATMENT+SITE,data=kelp_order)
+summary(mod2)
+
+```
+#### b. Which treatment has the highest percent cover? Which site has the highest percent cover? (4pts)
+
+The continual removal treatment has the highest percent cover. Carpinteria is the site with the highest percent cover. 
+
+
+
+### Post Hoc Comparisons
+Let's say we were interested in only comparing percent cover among the different sites. 
+
+#### c. Fit a 1-way ANOVA using only SITE as the grouping factor and print the summary. You can use either aov() or lm(). (3pts)
+
+```{r}
+
+mod3 = aov(PERCENT_COVER ~ SITE, data=kelp_order)
+summary(mod3)
+
+```
+
+#### d. Conduct a post hoc test on the model using the TukeyHSD function. Which sites differ from which? (5pts)
+
+```{r}
+TukeyHSD(mod3)
+post_hoc <- glht(mod3, linfct = mcp(SITE="Tukey"))
+summary(post_hoc)
+```
+
+CARP differs from AQUE (p value less than 0.05). CARP has significantly more Corallinales than AQUE. <br>
+CARP differs significantly from MOHK. Once again, CARP has significantly more Corallinales than MOHK. <br>
+NAPLES differs signfiicantly from MOHK. NAPLEs has significantly more Corallinales than MOHK. 
+
+
+
+#### e. Why might we care about the effect of kelp removal on your chosen taxonomic order? (3pts)
+
+
+Giant kelp may be sensitive to the effects of climate change. Increasing wave action (brought on by more extreme weather patters) and ocean heating could decrease the prevalence of giant kelp. In that case, it is important to know how Corallinales would be affected by the kelp's dissapearance. Would it increase, decrease or remain unaffected? 
+
+
+#### f. What additional factor(s) would you want to investigate with this dataset? (2pts)
+Investigating the effect of kelp removal on other taxonomic orders might reveal interesting trends. Additionally, the sampling time varies when looking back at the "month" column of the unfiltered database. It is possible that percent cover of specific orders is influenced on an annual cycle (especially in the annual removal treatment). Therefore, it might be interesting to look at the percent cover of a particular species by month, or to only look at the percent cover of a particular species at the same month every year (as opposed to averaging the percent cover from all months into one year). 
+
+
+
+
+
+
+
+
