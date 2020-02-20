@@ -12,6 +12,8 @@ knitr::opts_knit$set("~/Biology/146/Homework 3")
 library(ggplot2)
 library(car)
 library(dplyr)
+library(tidyverse)
+library(multcomp)
 ```
 
 In this homework, you will:
@@ -68,11 +70,11 @@ While there are a lot of data in this dataset, we are interested in comparing pe
 
 
 Five sites were represented in this dataset. <br>
-AQUE = Arroyo Quemado Reef
-CARP = Carpinteria Reef
-MOHK = Mohawk Reef
-NAPL = Naples Reef
-IVEE = Isla Vista Reef
+AQUE = Arroyo Quemado Reef <br>
+CARP = Carpinteria Reef <br>
+MOHK = Mohawk Reef <br>
+NAPL = Naples Reef <br>
+IVEE = Isla Vista Reef <br>
 
 We now have some work to do to get the data in the shape that we want!
 
@@ -85,9 +87,9 @@ str(kelp)
 
 ```
 
-Values that are "not recorded or available" are recorded as -99999. 
+Values that are "not recorded or available" are recorded as **-99999.** 
 
-We now are going to thin our dataset to exclude these missing values for our response variable of interest, PERCENT_COVER.
+*We now are going to thin our dataset to exclude these missing values for our response variable of interest, PERCENT_COVER.*
 
 #### e. Create a new dataframe (called kelp2) that excludes any row that contains a missing value (as coded above). 
 
@@ -116,7 +118,7 @@ kelp2 = kelp[-which(kelp$PERCENT_COVER<0),]
 dim(kelp2)
 ```
 
-There are now 74052 rows and 24 columns. 
+**There are now 74052 rows and 24 columns.** 
 
 
 We have also already decided that we are going to restrict our analyses to only compare CONTROL, ANNUAL, and CONTINUAL removal. 
@@ -179,7 +181,7 @@ dim(kelp4)
 # dim(kelp4)
 ```
 
-When I initially ran the code there were 26144 rows and 7 columns BUT there was a taxon order with -99999, indicating a lack of data. 
+When I initially ran the code there were **26144 rows and 7 columns** BUT there was a taxon order with -99999. I kept this taxon because I did not want to delete the data but the commented lines will remove this taxon. Removing the -99999 taxon reduced the number of rows to 25456.   
 
 
 #### Slowly but surely, we are simplifying these data! Check out the last few lines of kelp4 using the tail() function.
@@ -193,7 +195,7 @@ tail(kelp4)
 
 #### h. Why should we take the average percent cover (across transect and time period for each order) if we are only interested in comparing the treatments (using sites as replicates)? (3pts)
 
-The average percent cover is a simple way to visualize the effect of treatment (continual, annual, control) and taxon order on percent cover. Sicne percent cover was measured for species over the same time frame, simplyfying the treatment effect by averaging the percent cover should be OK. 
+The average percent cover is a simple way to visualize the effect of treatment (continual, annual, control) and taxon order on percent cover. Additionally, representing each data point assumes that they are all independent. However, there may be similarities across transects (similar to how rump stripes on the same zebra may not be independent). If we did not take the mean percent cover we would be at risk of pseudoreplication as some points are likely to be non-independent.  
 
 
 There are ways to incorporate these details in statistical models, but for now we will simply average across them using a similar method to how we added percent cover.
@@ -204,7 +206,7 @@ There are ways to incorporate these details in statistical models, but for now w
 
 kelp5 = kelp4 %>% group_by(TREATMENT, SITE, TAXON_ORDER) %>% 
   summarize_at(vars(PERCENT_COVER), funs(mean))
-
+dim(kelp5)
 ```
 
 Your final kelp5 dataset should have 532 rows. If it does not, recheck your work!
@@ -217,16 +219,17 @@ Your final kelp5 dataset should have 532 rows. If it does not, recheck your work
 
 ```{r}
 ggplot(kelp5, aes(x=TAXON_ORDER, y=PERCENT_COVER))+
-  geom_bar(stat="identity")+
+  geom_boxplot()+
   ggtitle("Percent cover by taxon order (All sites + treatments)")+
   theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0.6))+
+  labs(x="Taxon order", y="Percent cover")
   theme(plot.title = element_text(hjust=0.5))
 
 
 
 ```
 
-A simple plot that shows the percent cover of different taxon orders. Percent cover exceeds 100 because cover is added across five different sites and three different treatments. So potentially 14-15 different percent covers are represented in one bar. 
+This is a simple plot that shows the average percent cover of different taxon orders. It appears that Corallinales has the highest median percent cover. There are quite a few outliers across the different orders so we should check normality and variance before we perform an anova. 
 
 #### b. Which order has the highest percent cover on average? (5pts)
 
@@ -253,7 +256,7 @@ head(kelp_order)
 ```{r}
 ggplot(kelp_order, aes(x=TREATMENT, y=PERCENT_COVER, fill=TREATMENT))+
   geom_boxplot()+
-  labs(x="Transect treatment")+
+  labs(x="Treatment type")+
   ggtitle("Percent cover of Corinalles across treatments")+
   theme(plot.title=element_text(hjust=0.5))
 
@@ -341,7 +344,7 @@ My Fstat is `r Fstat` and my F* is `r Fstar`.
 
 
 #### f. Do you reject or fail to reject the null hypothesis of equal between- and within-group variances? (2pts)
-Since the Fstat is less extreme than the calculated Fstar we fail to reject the null hypothesis that the between and within group variances are significantly different. Additionally, we also cannot reject the null hypothesis that the means of all the groups are the same. This is concerned by running the actual ANOVA, which returns a p value greater than 0.05. 
+Since the Fstat is less extreme than the calculated Fstar we fail to reject the null hypothesis that the between and within group variances are significantly different. Additionally, we also cannot reject the null hypothesis that the means of all the groups are the same. This is confirmed by running the actual ANOVA, which returns a p value greater than 0.05. 
 
 
 
@@ -362,13 +365,18 @@ Given that each treatment was conducted at eact of five sites, we may want to in
 
 #### a. Include site as a second factor in your analysis using aov() and lm(). Print the summary outputs. (4pts)
 ```{r}
+#aov method
 mod2 = aov(PERCENT_COVER ~ TREATMENT+SITE,data=kelp_order)
 summary(mod2)
 
+#lm method
+lm_mod2 <- lm(PERCENT_COVER ~ TREATMENT+SITE, data=kelp_order)
+summary(lm_mod2)
+anova(lm_mod2)
 ```
 #### b. Which treatment has the highest percent cover? Which site has the highest percent cover? (4pts)
 
-The continual removal treatment has the highest percent cover. Carpinteria is the site with the highest percent cover. 
+The **continual** removal treatment has the highest percent cover. **Carpinteria** is the site with the highest percent cover. 
 
 
 
@@ -405,7 +413,7 @@ Giant kelp may be sensitive to the effects of climate change. Increasing wave ac
 
 
 #### f. What additional factor(s) would you want to investigate with this dataset? (2pts)
-Investigating the effect of kelp removal on other taxonomic orders might reveal interesting trends. Additionally, the sampling time varies when looking back at the "month" column of the unfiltered database. It is possible that percent cover of specific orders is influenced on an annual cycle (especially in the annual removal treatment). Therefore, it might be interesting to look at the percent cover of a particular species by month, or to only look at the percent cover of a particular species at the same month every year (as opposed to averaging the percent cover from all months into one year). 
+Investigating the effect of kelp removal on other taxonomic orders might reveal interesting trends. Additionally, the sampling time varies when looking back at the "month" column of the unfiltered database. It is possible that percent cover of specific orders are influenced on an annual cycle (especially in the annual removal treatment). Therefore, it might be interesting to look at the percent cover of a particular species by month, or to only look at the percent cover of a particular species at the same month every year (as opposed to averaging the percent cover from all months into one year). 
 
 
 
